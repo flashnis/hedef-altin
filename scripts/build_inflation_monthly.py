@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 import pandas as pd
 from datetime import date
@@ -6,32 +7,63 @@ from datetime import date
 EVDS_KEY = os.environ["EVDS_KEY"].strip()
 
 INF_SERIES = "TP.FG.TUFE.AYLIK"
-START_DATE = "01-01-2005"
-END_DATE = date.today().strftime("%d-%m-%Y")
+
+START_YEAR = 2005
 OUT_PATH = "data/enflasyon_aylik.csv"
 EVDS_BASE = "https://evds2.tcmb.gov.tr/service/evds/"
 
+CONNECT_TIMEOUT = 20
+READ_TIMEOUT = 180
+
+def make_session() -> requests.Session:
+    s = requests.Session()
+    s.headers.update({
+        "key": EVDS_KEY,
+        "User-Agent": "hedef-altin-github-actions/1.0"
+    })
+    return s
+
+def fetch_range(session: requests.Session, series: str, start_date: str, end_date: str) -> pd.DataFrame:
+    url = f"{EVDS_BASE}series={series}&startDate={start_date}&endDate={end_date}&type=json"
+
+    last_err = None
+    for attempt in range(1, 6):
+        try:
+            r = session.get(url, timeout=(CONNECT_TIMEOUT, READ_TIMEOUT))
+            r.raise_for_status()
+            items = r.json().get("items", [])
+            if not items:
+                raise RuntimeError("EVDS items boş döndü.")
+            return pd.DataFrame(items)
+        except Exception as e:
+            last_err = e
+            sleep_s = min(5 * attempt, 25)
+            print(f"[WARN] fetch failed attempt={attempt} range={start_date}->{end_date}: {e}")
+            time.sleep(sleep_s)
+
+    raise last_err
+
 def main():
-    url = f"{EVDS_BASE}series={INF_SERIES}&startDate={START_DATE}&endDate={END_DATE}&type=json"
-    headers = {"key": EVDS_KEY}  # <-- kritik değişiklik
+    session = make_session()
 
-    r = requests.get(url, headers=headers, timeout=60)
-    r.raise_for_status()
+    dfs = []
+    this_year = date.today().year
+    for y in range(START_YEAR, this_year + 1):
+        start = f"01-01-{y}"
+        end = f"31-12-{y}" if y < this_year else date.today().strftime("%d-%m-%Y")
+        df = fetch_range(session, INF_SERIES, start, end)
+        dfs.append(df)
 
-    items = r.json().get("items", [])
-    if not items:
-        raise RuntimeError("EVDS items boş döndü. Seri kodlarını kontrol et.")
+    df = pd.concat(dfs, ignore_index=True)
 
-    df = pd.DataFrame(items)
     if "Tarih" not in df.columns:
         raise RuntimeError(f"Tarih kolonu yok. Kolonlar: {list(df.columns)}")
 
     df["date"] = pd.to_datetime(df["Tarih"], dayfirst=True, errors="coerce")
     v = pd.to_numeric(df.get(INF_SERIES), errors="coerce")
 
-    # yüzde geldiyse (2.5 gibi) -> 0.025
-    monthly = v / 100.0
-    monthly = monthly.where(v > 1, v)
+    # yüzde (2.5) geldiyse -> 0.025 ; zaten 0.025 geldiyse aynı kalsın
+    monthly = (v / 100.0).where(v > 1, v)
 
     out = pd.DataFrame({"date": df["date"], "monthlyInflation": monthly}).dropna().sort_values("date")
     out["date"] = out["date"].dt.strftime("%Y-%m-%d")
