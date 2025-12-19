@@ -5,21 +5,17 @@ from datetime import date
 
 EVDS_KEY = os.environ["EVDS_KEY"].strip()
 
-INF_SERIES = "TP.FG.TUFE.AYLIK"   # TÜFE aylık değişim
+INF_SERIES = "TP.FG.TUFE.AYLIK"
 START_DATE = "01-01-2005"
 END_DATE = date.today().strftime("%d-%m-%Y")
 OUT_PATH = "data/enflasyon_aylik.csv"
-EVDS_URL = "https://evds2.tcmb.gov.tr/service/evds/"
+EVDS_BASE = "https://evds2.tcmb.gov.tr/service/evds/"
 
 def main():
-    params = {
-        "series": INF_SERIES,
-        "startDate": START_DATE,
-        "endDate": END_DATE,
-        "type": "json",
-        "key": EVDS_KEY,
-    }
-    r = requests.get(EVDS_URL, params=params, timeout=60)
+    url = f"{EVDS_BASE}series={INF_SERIES}&startDate={START_DATE}&endDate={END_DATE}&type=json"
+    headers = {"key": EVDS_KEY}  # <-- kritik değişiklik
+
+    r = requests.get(url, headers=headers, timeout=60)
     r.raise_for_status()
 
     items = r.json().get("items", [])
@@ -33,7 +29,7 @@ def main():
     df["date"] = pd.to_datetime(df["Tarih"], dayfirst=True, errors="coerce")
     v = pd.to_numeric(df.get(INF_SERIES), errors="coerce")
 
-    # Heuristik: 2.5 gibi değerler -> yüzde, 0.025 gibi -> zaten oran
+    # yüzde geldiyse (2.5 gibi) -> 0.025
     monthly = v / 100.0
     monthly = monthly.where(v > 1, v)
 
@@ -47,4 +43,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
