@@ -25,12 +25,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas requests
 
-      - name: Build CSVs
+      - name: Build CSV files (retry once)
         env:
           EVDS_KEY: ${{ secrets.EVDS_KEY }}
         run: |
-          python scripts/build_gold_2005.py
-          python scripts/build_inflation_monthly.py
+          python scripts/build_gold_2005.py || (sleep 30 && python scripts/build_gold_2005.py)
+          python scripts/build_inflation_monthly.py || (sleep 30 && python scripts/build_inflation_monthly.py)
 
       - name: Commit & push if changed
         run: |
