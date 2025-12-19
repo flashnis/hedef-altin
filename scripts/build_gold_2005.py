@@ -5,24 +5,20 @@ from datetime import date
 
 EVDS_KEY = os.environ["EVDS_KEY"].strip()
 
-# Senin verdiğin seriler
 XAU_SERIES = "TP.DK.XAU.S"        # Ons altın (USD/ONS)
 USDTRY_SERIES = "TP.DK.USD.S.YTL" # USD/TRY satış
 
 START_DATE = "01-01-2005"
 END_DATE = date.today().strftime("%d-%m-%Y")
 OUT_PATH = "data/gram_altin_2005.csv"
-EVDS_URL = "https://evds2.tcmb.gov.tr/service/evds/"
+EVDS_BASE = "https://evds2.tcmb.gov.tr/service/evds/"
 
 def main():
-    params = {
-        "series": f"{XAU_SERIES}-{USDTRY_SERIES}",
-        "startDate": START_DATE,
-        "endDate": END_DATE,
-        "type": "json",
-        "key": EVDS_KEY,
-    }
-    r = requests.get(EVDS_URL, params=params, timeout=60)
+    series = f"{XAU_SERIES}-{USDTRY_SERIES}"
+    url = f"{EVDS_BASE}series={series}&startDate={START_DATE}&endDate={END_DATE}&type=json"
+
+    headers = {"key": EVDS_KEY}  # <-- kritik değişiklik
+    r = requests.get(url, headers=headers, timeout=60)
     r.raise_for_status()
 
     items = r.json().get("items", [])
@@ -30,7 +26,6 @@ def main():
         raise RuntimeError("EVDS items boş döndü. Seri kodlarını kontrol et.")
 
     df = pd.DataFrame(items)
-
     if "Tarih" not in df.columns:
         raise RuntimeError(f"Tarih kolonu yok. Kolonlar: {list(df.columns)}")
 
